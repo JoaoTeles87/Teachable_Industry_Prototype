@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Verificador de Conformidade Industrial IA</title>
+    <style>
+        body { font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; margin-top: 20px; background-color: #f0f0f0; }
+        .container { background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); text-align: center; }
+        #webcam-container { width: 320px; height: 240px; border: 2px solid black; margin-bottom: 15px; }
+        #status-indicator { width: 100px; height: 100px; border-radius: 50%; margin: 15px auto; border: 2px solid #555; display: flex; justify-content: center; align-items: center; font-weight: bold; color: white; text-shadow: 1px 1px 2px black; }
+        #status-message { font-size: 1.2em; font-weight: bold; min-height: 30px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Verificador de Conformidade de Peça</h1>
+        <div id="webcam-container"></div>
+        <div id="status-indicator" style="background-color: lightgray;">Aguardando</div>
+        <div id="status-message">Posicione a peça em frente à câmera.</div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    <script type="text/javascript">
+        const YOUR_MODEL_URL = "https://teachablemachine.withgoogle.com/models/bjzIKCmroL/"; 
+
+        let model, webcam, labelContainer, maxPredictions;
+        let statusIndicator, statusMessage;
+
+        const CLASS_PECA_OK = "Peca_OK";
+        const CLASS_SEM_TAMPA = "Peca_SemTampa";
+        const CLASS_TAMPA_ERRADA = "Peca_TampaErrada";
+        const CLASS_ESTEIRA_VAZIA = "Esteira_Vazia";
+
+        async function init() {
+            const modelURL = YOUR_MODEL_URL + "model.json";
+            const metadataURL = YOUR_MODEL_URL + "metadata.json";
+
+            statusIndicator = document.getElementById("status-indicator");
+            statusMessage = document.getElementById("status-message");
+            
+            try {
+                model = await tmImage.load(modelURL, metadataURL);
+                maxPredictions = model.getTotalClasses();
+
+                const flip = true;
+                webcam = new tmImage.Webcam(320, 240, flip);
+                await webcam.setup();
+                await webcam.play();
+                document.getElementById("webcam-container").appendChild(webcam.canvas);
+                statusMessage.textContent = "Modelo carregado. Analisando...";
+
+                
+                window.requestAnimationFrame(loop);
+            } catch (e) {
+                console.error("Erro ao inicializar:", e);
+                statusMessage.textContent = "Erro ao carregar modelo. Verifique o link e permissões.";
+                statusIndicator.style.backgroundColor = "darkred";
+                statusIndicator.textContent = "ERRO";
+            }
+        }
+
+        async function loop() {
+            if (webcam && webcam.canvas) {
+                webcam.update();
+                await predict();
+            }
+            window.requestAnimationFrame(loop);
+        }
+
+        async function predict() {
+            if (!model || !webcam || !webcam.canvas) return;
+            const prediction = await model.predict(webcam.canvas);
+            let bestClass = "";
+            let highestProbability = 0;
+
+            for (let i = 0; i < maxPredictions; i++) {
+                
+
+                if (prediction[i].probability > highestProbability) {
+                    highestProbability = prediction[i].probability;
+                    bestClass = prediction[i].className;
+                }
+            }
+
+            // LÓGICA DE DECISÃO BASEADA NA CLASSE DETECTADA
+            if (highestProbability > 0.85) { // Limiar de confiança, ajuste se necessário
+                switch (bestClass) {
+                    case CLASS_PECA_OK:
+                        statusIndicator.style.backgroundColor = "green";
+                        statusIndicator.textContent = "OK";
+                        statusMessage.textContent = "PEÇA APROVADA";
+                        // Aqui poderia, por exemplo, enviar um sinal para uma "próxima etapa"
+                        break;
+                    case CLASS_SEM_TAMPA:
+                        statusIndicator.style.backgroundColor = "red";
+                        statusIndicator.textContent = "FALHA";
+                        statusMessage.textContent = "REPROVADA: SEM TAMPA";
+                        // Aqui poderia simular um alarme, parar uma "esteira"
+                        break;
+                    case CLASS_TAMPA_ERRADA:
+                        statusIndicator.style.backgroundColor = "darkorange";
+                        statusIndicator.textContent = "ALERTA";
+                        statusMessage.textContent = "REPROVADA: TAMPA INCORRETA";
+                        break;
+                    case CLASS_ESTEIRA_VAZIA:
+                        statusIndicator.style.backgroundColor = "lightgray";
+                        statusIndicator.textContent = "---";
+                        statusMessage.textContent = "Aguardando peça...";
+                        break;
+                    default:
+                        statusIndicator.style.backgroundColor = "lightgray";
+                        statusIndicator.textContent = "N/D";
+                        statusMessage.textContent = "Analisando...";
+                        break;
+                }
+            } else {
+                statusIndicator.style.backgroundColor = "lightgray";
+                statusIndicator.textContent = "Baixa Conf.";
+                statusMessage.textContent = "Não foi possível identificar a peça com clareza.";
+            }
+        }
+        init();
+    </script>
+</body>
+</html>
